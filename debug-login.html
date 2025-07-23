@@ -73,10 +73,32 @@
         
         <h3>Reset Password</h3>
         <input type="password" id="newPassword" placeholder="Enter new password">
-        <button onclick="setNewPassword()">Set New Password</button>
+        <button onclick="setNewPassword()">Set New Password (Firebase)</button>
+        
+        <h3>Firebase Password Management</h3>
+        <button onclick="checkFirebasePassword()">Check Firebase Password</button>
+        <button onclick="resetToDefault()">Reset to Default Password</button>
     </div>
 
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
     <script>
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAFuBQuONd5MOd0xYzQTMruhMIvfWWVquk",
+            authDomain: "prefect-s-attendance.firebaseapp.com",
+            databaseURL: "https://prefect-s-attendance-default-rtdb.firebaseio.com",
+            projectId: "prefect-s-attendance",
+            storageBucket: "prefect-s-attendance.appspot.com",
+            messagingSenderId: "346459404604",
+            appId: "1:346459404604:web:0474e89dd17bb5a7b95b06"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        
         async function hashPassword(password) {
             try {
                 const encoder = new TextEncoder();
@@ -155,21 +177,82 @@
                 return;
             }
             
-            const newHash = await hashPassword(newPassword);
-            localStorage.setItem('boardAdminPasswordHash', newHash);
+            try {
+                const newHash = await hashPassword(newPassword);
+                await firebase.database().ref('system/adminPassword').set(newHash);
+                
+                results.innerHTML = `
+                    <div class="result success">
+                        <strong>New Password Set Successfully in Firebase!</strong><br>
+                        <strong>Password:</strong> ${newPassword}<br>
+                        <strong>Hash:</strong> ${newHash}<br>
+                        Now try logging in with this password.
+                    </div>
+                `;
+            } catch (error) {
+                results.innerHTML = `
+                    <div class="result error">
+                        <strong>Error setting password:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function checkFirebasePassword() {
+            const results = document.getElementById('results');
             
-            results.innerHTML = `
-                <div class="result success">
-                    <strong>New Password Set Successfully!</strong><br>
-                    <strong>Password:</strong> ${newPassword}<br>
-                    <strong>Hash:</strong> ${newHash}<br>
-                    Now try logging in with this password.
-                </div>
-            `;
+            try {
+                const snapshot = await firebase.database().ref('system/adminPassword').once('value');
+                const storedHash = snapshot.val();
+                const defaultHash = 'f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e';
+                
+                results.innerHTML = `
+                    <div class="result">
+                        <strong>Firebase Password Check:</strong><br>
+                        <strong>Hash in Firebase:</strong> ${storedHash || 'Not set'}<br>
+                        <strong>Default Hash:</strong> ${defaultHash}<br>
+                        <strong>Is Default:</strong> ${storedHash === defaultHash ? 'YES' : 'NO'}<br>
+                        <strong>Database Status:</strong> ${storedHash ? 'Password exists' : 'No password set'}
+                    </div>
+                `;
+            } catch (error) {
+                results.innerHTML = `
+                    <div class="result error">
+                        <strong>Firebase Error:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function resetToDefault() {
+            const results = document.getElementById('results');
+            
+            try {
+                const defaultHash = 'f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e';
+                await firebase.database().ref('system/adminPassword').set(defaultHash);
+                
+                results.innerHTML = `
+                    <div class="result success">
+                        <strong>Reset to Default Password Complete!</strong><br>
+                        <strong>Default Password:</strong> PrefectsAdmin2025!<br>
+                        <strong>Hash:</strong> ${defaultHash}<br>
+                        Try logging in with "PrefectsAdmin2025!"
+                    </div>
+                `;
+            } catch (error) {
+                results.innerHTML = `
+                    <div class="result error">
+                        <strong>Error resetting password:</strong> ${error.message}
+                    </div>
+                `;
+            }
         }
 
         // Auto-run environment check on load
-        window.addEventListener('load', checkEnvironment);
+        window.addEventListener('load', () => {
+            checkEnvironment();
+            setTimeout(checkFirebasePassword, 1000); // Check Firebase after 1 second
+        });
     </script>
 </body>
 </html>

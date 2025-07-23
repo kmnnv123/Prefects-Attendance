@@ -26,9 +26,9 @@ async function attemptLogin() {
     }
     
     try {
-        // Get stored password hash or use default
-        const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
-        console.log('💾 Using stored hash:', storedPasswordHash.substring(0, 10) + '...');
+        // Get stored password hash from Firebase or use default
+        const storedPasswordHash = await getStoredPasswordHash();
+        console.log('💾 Using stored hash from Firebase:', storedPasswordHash.substring(0, 10) + '...');
         
         // Hash the entered password
         console.log('🔄 Hashing entered password...');
@@ -170,6 +170,48 @@ async function hashPassword(password) {
     const hashArray = Array.from(new Uint8Array(hash));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     return hashHex;
+}
+
+// Firebase Password Management
+async function getStoredPasswordHash() {
+    try {
+        if (!isFirebaseReady) {
+            await initializeFirebase();
+        }
+        
+        const snapshot = await firebase.database().ref('system/adminPassword').once('value');
+        const storedHash = snapshot.val();
+        
+        if (storedHash) {
+            console.log('📱 Password hash retrieved from Firebase');
+            return storedHash;
+        } else {
+            // No password stored yet, use default and store it
+            const defaultHash = "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
+            console.log('🔑 No password in Firebase, setting default');
+            await setStoredPasswordHash(defaultHash);
+            return defaultHash;
+        }
+    } catch (error) {
+        console.error('❌ Error getting password from Firebase:', error);
+        // Fallback to default if Firebase fails
+        return "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e";
+    }
+}
+
+async function setStoredPasswordHash(passwordHash) {
+    try {
+        if (!isFirebaseReady) {
+            await initializeFirebase();
+        }
+        
+        await firebase.database().ref('system/adminPassword').set(passwordHash);
+        console.log('✅ Password hash stored in Firebase');
+        return true;
+    } catch (error) {
+        console.error('❌ Error storing password in Firebase:', error);
+        return false;
+    }
 }
 
 // Firebase configuration
@@ -750,32 +792,41 @@ async function attemptPasswordChange() {
     const newPassword = newPasswordInput.value;
     const confirmPassword = confirmPasswordInput.value;
     
-    // Validate current password
-    const currentPasswordHash = await hashPassword(currentPassword);
-    const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
-    
-    if (currentPasswordHash !== storedPasswordHash) {
-        showPasswordError(currentPasswordInput, 'Current password is incorrect');
-        return;
+    try {
+        // Validate current password using Firebase
+        const currentPasswordHash = await hashPassword(currentPassword);
+        const storedPasswordHash = await getStoredPasswordHash();
+        
+        if (currentPasswordHash !== storedPasswordHash) {
+            showPasswordError(currentPasswordInput, 'Current password is incorrect');
+            return;
+        }
+        
+        // Validate new password
+        if (newPassword.length < 8) {
+            showPasswordError(newPasswordInput, 'New password must be at least 8 characters');
+            return;
+        }
+        
+        if (newPassword !== confirmPassword) {
+            showPasswordError(confirmPasswordInput, 'Passwords do not match');
+            return;
+        }
+        
+        // Save new password to Firebase
+        const newPasswordHash = await hashPassword(newPassword);
+        const success = await setStoredPasswordHash(newPasswordHash);
+        
+        if (success) {
+            closePasswordModal();
+            showSuccessMessage('🔑 Board admin password updated successfully in Firebase!');
+        } else {
+            showPasswordError(newPasswordInput, 'Failed to update password in database');
+        }
+    } catch (error) {
+        console.error('Password change error:', error);
+        showPasswordError(newPasswordInput, 'System error occurred');
     }
-    
-    // Validate new password
-    if (newPassword.length < 8) {
-        showPasswordError(newPasswordInput, 'New password must be at least 8 characters');
-        return;
-    }
-    
-    if (newPassword !== confirmPassword) {
-        showPasswordError(confirmPasswordInput, 'Passwords do not match');
-        return;
-    }
-    
-    // Save new password
-    const newPasswordHash = await hashPassword(newPassword);
-    localStorage.setItem('boardAdminPasswordHash', newPasswordHash);
-    
-    closePasswordModal();
-    showSuccessMessage('🔑 Board admin password updated successfully!');
 }
 
 function showPasswordError(inputElement, message) {
