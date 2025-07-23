@@ -123,7 +123,15 @@
             
             const hash = await hashPassword(password);
             const expectedHash = 'f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e';
-            const storedHash = localStorage.getItem('boardAdminPasswordHash') || expectedHash;
+            
+            // Get Firebase password hash
+            let storedHash = expectedHash;
+            try {
+                const snapshot = await firebase.database().ref('system/adminPassword').once('value');
+                storedHash = snapshot.val() || expectedHash;
+            } catch (error) {
+                console.error('Error getting Firebase password:', error);
+            }
             
             const isMatch = hash === expectedHash;
             const isStoredMatch = hash === storedHash;

@@ -214,6 +214,31 @@ async function setStoredPasswordHash(passwordHash) {
     }
 }
 
+// Clean up any legacy password data from localStorage
+function cleanupLegacyPasswordStorage() {
+    try {
+        // Remove any old password-related localStorage items
+        const legacyPasswordKeys = [
+            'boardAdminPasswordHash',
+            'adminPassword',
+            'password',
+            'loginPassword',
+            'boardPassword'
+        ];
+        
+        legacyPasswordKeys.forEach(key => {
+            if (localStorage.getItem(key)) {
+                console.log(`🧹 Removing legacy password data: ${key}`);
+                localStorage.removeItem(key);
+            }
+        });
+        
+        console.log('✅ Legacy password cleanup completed');
+    } catch (error) {
+        console.error('❌ Error during legacy password cleanup:', error);
+    }
+}
+
 // Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyAFuBQuONd5MOd0xYzQTMruhMIvfWWVquk",
@@ -237,6 +262,9 @@ const STORAGE_KEYS = {
 // Wait for DOM to load before showing login
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 App loaded - checking for bypass or showing login screen');
+    
+    // Clean up any legacy password storage
+    cleanupLegacyPasswordStorage();
     
     // Check for bypass parameter
     const urlParams = new URLSearchParams(window.location.search);
@@ -450,8 +478,8 @@ async function attemptDeleteAllData() {
     const passwordInput = document.getElementById('deletePassword');
     const enteredPassword = passwordInput.value;
     
-    // Get stored password hash or use default
-    const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
+    // Get stored password hash from Firebase
+    const storedPasswordHash = await getStoredPasswordHash();
     
     // Hash the entered password
     const enteredPasswordHash = await hashPassword(enteredPassword);

@@ -87,8 +87,11 @@
             }
             
             try {
-                // Get stored password hash or use default
-                const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e";
+                // Get stored password hash from Firebase or use default
+                let storedPasswordHash = "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e";
+                
+                // Note: This test file doesn't have Firebase configured, so it uses the default hash
+                console.log('Note: Using default hash since Firebase is not configured in this test file');
                 
                 // Hash the entered password
                 const enteredPasswordHash = await hashPassword(enteredPassword);
