@@ -284,11 +284,12 @@ async function startSessionMonitoring() {
     currentSessionId = generateSessionId();
     console.log('🆔 Session started:', currentSessionId);
     
-    // Listen for password changes in real-time
+    // Remove previous listener if exists
     if (passwordChangeListener) {
-        passwordChangeListener.off(); // Remove previous listener
+        firebase.database().ref('system/sessionInvalidation').off('value', passwordChangeListener);
     }
     
+    // Listen for password changes in real-time
     passwordChangeListener = firebase.database().ref('system/sessionInvalidation').on('value', async (snapshot) => {
         const invalidationTimestamp = snapshot.val();
         
@@ -323,7 +324,7 @@ async function forceLogout(message = 'You have been logged out.') {
     
     // Remove listeners
     if (passwordChangeListener) {
-        passwordChangeListener.off();
+        firebase.database().ref('system/sessionInvalidation').off('value', passwordChangeListener);
         passwordChangeListener = null;
     }
     
@@ -435,7 +436,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 // Clean up session monitoring when page unloads
 window.addEventListener('beforeunload', () => {
     if (passwordChangeListener) {
-        passwordChangeListener.off();
+        firebase.database().ref('system/sessionInvalidation').off('value', passwordChangeListener);
     }
     if (sessionCheckInterval) {
         clearInterval(sessionCheckInterval);
