@@ -2,12 +2,12 @@
   "name": "BOP25 Fingerprint Data Analyzer",
   "short_name": "BOP25",
   "description": "Board of Prefects 25 Fingerprint Data Management System",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#10b981",
   "orientation": "portrait",
-  "scope": "/",
+  "scope": "./",
   "icons": [
     {
       "src": "prefects logo.png",
