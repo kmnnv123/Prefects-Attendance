@@ -9,6 +9,11 @@ let holidays = new Set(); // Store holidays as 'YYYY-MM-DD' strings
 let database = null;
 let isFirebaseReady = false;
 
+// Session management variables
+let currentSessionId = null;
+let passwordChangeListener = null;
+let sessionCheckInterval = null;
+
 // Authentication System
 async function attemptLogin() {
     const passwordInput = document.getElementById('loginPassword');
@@ -39,6 +44,10 @@ async function attemptLogin() {
         if (enteredPasswordHash === storedPasswordHash) {
             // Successful login
             console.log('✅ Login successful');
+            
+            // Start session monitoring
+            await startSessionMonitoring();
+            
             hideLoginScreen();
             await initializeMainApp();
         } else {
@@ -205,12 +214,147 @@ async function setStoredPasswordHash(passwordHash) {
             await initializeFirebase();
         }
         
+        // Set the new password hash
         await firebase.database().ref('system/adminPassword').set(passwordHash);
         console.log('✅ Password hash stored in Firebase');
+        
+        // Force logout all active sessions by updating the session invalidation timestamp
+        await invalidateAllSessions();
+        
         return true;
     } catch (error) {
         console.error('❌ Error storing password in Firebase:', error);
         return false;
+    }
+}
+
+// Session Management Functions
+function generateSessionId() {
+    return 'session_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+}
+
+async function invalidateAllSessions() {
+    try {
+        if (!isFirebaseReady) {
+            await initializeFirebase();
+        }
+        
+        const invalidationTimestamp = Date.now();
+        await firebase.database().ref('system/sessionInvalidation').set(invalidationTimestamp);
+        console.log('🚪 All sessions invalidated at:', new Date(invalidationTimestamp).toLocaleString());
+        return true;
+    } catch (error) {
+        console.error('❌ Error invalidating sessions:', error);
+        return false;
+    }
+}
+
+async function checkSessionValidity() {
+    try {
+        if (!isFirebaseReady || !currentSessionId) {
+            return false;
+        }
+        
+        // Get the session invalidation timestamp
+        const snapshot = await firebase.database().ref('system/sessionInvalidation').once('value');
+        const invalidationTimestamp = snapshot.val();
+        
+        if (!invalidationTimestamp) {
+            return true; // No invalidation timestamp set yet
+        }
+        
+        // Extract session timestamp from session ID
+        const sessionTimestamp = parseInt(currentSessionId.split('_')[1]);
+        
+        // If session was created before the invalidation timestamp, it's invalid
+        if (sessionTimestamp < invalidationTimestamp) {
+            console.log('⚠️ Session invalid - password was changed after login');
+            return false;
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('❌ Error checking session validity:', error);
+        return false;
+    }
+}
+
+async function startSessionMonitoring() {
+    // Generate a new session ID for this login
+    currentSessionId = generateSessionId();
+    console.log('🆔 Session started:', currentSessionId);
+    
+    // Listen for password changes in real-time
+    if (passwordChangeListener) {
+        passwordChangeListener.off(); // Remove previous listener
+    }
+    
+    passwordChangeListener = firebase.database().ref('system/sessionInvalidation').on('value', async (snapshot) => {
+        const invalidationTimestamp = snapshot.val();
+        
+        if (invalidationTimestamp && currentSessionId) {
+            const sessionTimestamp = parseInt(currentSessionId.split('_')[1]);
+            
+            if (sessionTimestamp < invalidationTimestamp) {
+                console.log('🚪 Password changed - forcing logout');
+                await forceLogout('Password has been changed by administrator. Please log in again.');
+            }
+        }
+    });
+    
+    // Also check periodically as backup
+    if (sessionCheckInterval) {
+        clearInterval(sessionCheckInterval);
+    }
+    
+    sessionCheckInterval = setInterval(async () => {
+        const isValid = await checkSessionValidity();
+        if (!isValid) {
+            await forceLogout('Session expired. Please log in again.');
+        }
+    }, 30000); // Check every 30 seconds
+}
+
+async function forceLogout(message = 'You have been logged out.') {
+    console.log('🚪 Forcing logout:', message);
+    
+    // Clear session data
+    currentSessionId = null;
+    
+    // Remove listeners
+    if (passwordChangeListener) {
+        passwordChangeListener.off();
+        passwordChangeListener = null;
+    }
+    
+    if (sessionCheckInterval) {
+        clearInterval(sessionCheckInterval);
+        sessionCheckInterval = null;
+    }
+    
+    // Show logout message
+    if (message) {
+        alert(message);
+    }
+    
+    // Redirect to login screen
+    showLoginScreen();
+}
+
+function showLoginScreen() {
+    const loginScreen = document.getElementById('loginScreen');
+    const mainApp = document.getElementById('mainApp');
+    
+    if (loginScreen && mainApp) {
+        mainApp.style.display = 'none';
+        loginScreen.style.display = 'flex';
+        
+        // Clear the password input
+        const passwordInput = document.getElementById('loginPassword');
+        if (passwordInput) {
+            passwordInput.value = '';
+            passwordInput.focus();
+        }
     }
 }
 
@@ -260,7 +404,7 @@ const STORAGE_KEYS = {
 };
 
 // Wait for DOM to load before showing login
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 App loaded - checking for bypass or showing login screen');
     
     // Clean up any legacy password storage
@@ -270,6 +414,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('bypass') === 'true') {
         console.log('🔓 Bypass mode activated - skipping authentication');
+        
+        // Start session monitoring even in bypass mode
+        await startSessionMonitoring();
+        
         hideLoginScreen();
         initializeMainApp();
         return;
@@ -282,6 +430,16 @@ document.addEventListener('DOMContentLoaded', function() {
             passwordInput.focus();
         }
     }, 100);
+});
+
+// Clean up session monitoring when page unloads
+window.addEventListener('beforeunload', () => {
+    if (passwordChangeListener) {
+        passwordChangeListener.off();
+    }
+    if (sessionCheckInterval) {
+        clearInterval(sessionCheckInterval);
+    }
 });
 
 // Initialize Firebase
@@ -847,7 +1005,7 @@ async function attemptPasswordChange() {
         
         if (success) {
             closePasswordModal();
-            showSuccessMessage('🔑 Board admin password updated successfully in Firebase!');
+            showSuccessMessage('🔑 Password updated successfully! All other active sessions have been logged out for security.');
         } else {
             showPasswordError(newPasswordInput, 'Failed to update password in database');
         }
