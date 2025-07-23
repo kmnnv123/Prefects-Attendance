@@ -15,6 +15,11 @@ async function attemptLogin() {
     const enteredPassword = passwordInput.value;
     const loginError = document.getElementById('loginError');
     
+    console.log('🔐 Login attempt initiated');
+    console.log('🌐 Current URL:', window.location.href);
+    console.log('🔒 Crypto.subtle available:', !!window.crypto?.subtle);
+    console.log('📍 Protocol:', window.location.protocol);
+    
     if (!enteredPassword) {
         showLoginError('Please enter a password');
         return;
@@ -23,15 +28,21 @@ async function attemptLogin() {
     try {
         // Get stored password hash or use default
         const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
+        console.log('💾 Using stored hash:', storedPasswordHash.substring(0, 10) + '...');
         
         // Hash the entered password
+        console.log('🔄 Hashing entered password...');
         const enteredPasswordHash = await hashPassword(enteredPassword);
+        console.log('✅ Generated hash:', enteredPasswordHash.substring(0, 10) + '...');
+        console.log('🔍 Hash match:', enteredPasswordHash === storedPasswordHash);
         
         if (enteredPasswordHash === storedPasswordHash) {
             // Successful login
+            console.log('✅ Login successful');
             hideLoginScreen();
             await initializeMainApp();
         } else {
+            console.log('❌ Login failed - hash mismatch');
             showLoginError('Invalid password. Contact board administration for access.');
             passwordInput.value = '';
             passwordInput.style.animation = 'shake 0.5s ease-in-out';
@@ -40,7 +51,7 @@ async function attemptLogin() {
             }, 500);
         }
     } catch (error) {
-        console.error('Login error:', error);
+        console.error('💥 Login error:', error);
         showLoginError('Login system error. Please try again.');
     }
 }
@@ -183,7 +194,17 @@ const STORAGE_KEYS = {
 
 // Wait for DOM to load before showing login
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 App loaded - showing login screen');
+    console.log('🚀 App loaded - checking for bypass or showing login screen');
+    
+    // Check for bypass parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('bypass') === 'true') {
+        console.log('🔓 Bypass mode activated - skipping authentication');
+        hideLoginScreen();
+        initializeMainApp();
+        return;
+    }
+    
     // Focus on password input
     setTimeout(() => {
         const passwordInput = document.getElementById('loginPassword');
