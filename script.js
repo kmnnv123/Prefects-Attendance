@@ -9,6 +9,158 @@ let holidays = new Set(); // Store holidays as 'YYYY-MM-DD' strings
 let database = null;
 let isFirebaseReady = false;
 
+// Authentication System
+async function attemptLogin() {
+    const passwordInput = document.getElementById('loginPassword');
+    const enteredPassword = passwordInput.value;
+    const loginError = document.getElementById('loginError');
+    
+    if (!enteredPassword) {
+        showLoginError('Please enter a password');
+        return;
+    }
+    
+    try {
+        // Get stored password hash or use default
+        const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
+        
+        // Hash the entered password
+        const enteredPasswordHash = await hashPassword(enteredPassword);
+        
+        if (enteredPasswordHash === storedPasswordHash) {
+            // Successful login
+            hideLoginScreen();
+            await initializeMainApp();
+        } else {
+            showLoginError('Invalid password. Contact board administration for access.');
+            passwordInput.value = '';
+            passwordInput.style.animation = 'shake 0.5s ease-in-out';
+            setTimeout(() => {
+                passwordInput.style.animation = '';
+            }, 500);
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        showLoginError('Login system error. Please try again.');
+    }
+}
+
+function showLoginError(message) {
+    const loginError = document.getElementById('loginError');
+    
+    if (loginError) {
+        loginError.textContent = message;
+        loginError.style.display = 'block';
+        
+        setTimeout(() => {
+            loginError.style.display = 'none';
+        }, 4000);
+    }
+}
+
+function hideLoginScreen() {
+    const loginScreen = document.getElementById('loginScreen');
+    const mainApp = document.getElementById('mainApp');
+    
+    if (!loginScreen || !mainApp) {
+        console.error('Cannot find required elements for login screen transition');
+        return;
+    }
+    
+    // Fade out login screen
+    loginScreen.style.transition = 'opacity 0.5s ease-out';
+    loginScreen.style.opacity = '0';
+    
+    setTimeout(() => {
+        loginScreen.style.display = 'none';
+        mainApp.style.display = 'block';
+        
+        // Fade in main app
+        mainApp.style.opacity = '0';
+        mainApp.style.transition = 'opacity 0.5s ease-in';
+        setTimeout(() => {
+            mainApp.style.opacity = '1';
+        }, 50);
+    }, 500);
+}
+
+async function initializeMainApp() {
+    console.log('🚀 App starting - DOM loaded');
+    
+    // Show loading indicator
+    showLoadingIndicator('Connecting to BOP25 Server...');
+    
+    try {
+        console.log('📡 Initializing Firebase connection...');
+        await initializeFirebase();
+        
+        updateLoadingIndicator('Loading your data from BOP25 Server...');
+        console.log('🔄 Loading data from Firebase...');
+        await loadDataFromFirebase();
+        
+        updateLoadingIndicator('Starting application...');
+        console.log('✨ Firebase data loaded, starting app...');
+        await initializeApp();
+        console.log('🎉 App initialization complete');
+        
+        hideLoadingIndicator();
+    } catch (error) {
+        console.error('❌ App initialization error:', error);
+        showErrorIndicator('Failed to connect to BOP25 Server. Using offline mode.');
+        setTimeout(hideLoadingIndicator, 3000);
+    }
+}
+
+function logout() {
+    // Clear any sensitive data from memory
+    extractedData = [];
+    allMonths = [];
+    holidays = new Set();
+    
+    // Hide main app and show login screen
+    const loginScreen = document.getElementById('loginScreen');
+    const mainApp = document.getElementById('mainApp');
+    
+    // Fade out main app
+    mainApp.style.transition = 'opacity 0.3s ease-out';
+    mainApp.style.opacity = '0';
+    
+    setTimeout(() => {
+        mainApp.style.display = 'none';
+        loginScreen.style.display = 'flex';
+        loginScreen.style.opacity = '0';
+        
+        // Clear results section
+        const resultsDiv = document.getElementById('results');
+        if (resultsDiv) {
+            resultsDiv.innerHTML = '';
+        }
+        
+        // Clear login password and focus on input
+        const passwordInput = document.getElementById('loginPassword');
+        if (passwordInput) {
+            passwordInput.value = '';
+            passwordInput.focus();
+        }
+        
+        // Fade in login screen
+        loginScreen.style.transition = 'opacity 0.3s ease-in';
+        setTimeout(() => {
+            loginScreen.style.opacity = '1';
+        }, 50);
+    }, 300);
+}
+
+// Hash password function (used by both login and password change)
+async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hash));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+}
+
 // Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyAFuBQuONd5MOd0xYzQTMruhMIvfWWVquk",
@@ -29,24 +181,31 @@ const STORAGE_KEYS = {
     LAST_UPDATED: 'fingerprint_last_updated'
 };
 
-// Wait for DOM to load before initializing
-document.addEventListener('DOMContentLoaded', async function() {
-    initializeFirebase();
-    await initializeApp();
+// Wait for DOM to load before showing login
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 App loaded - showing login screen');
+    // Focus on password input
+    setTimeout(() => {
+        const passwordInput = document.getElementById('loginPassword');
+        if (passwordInput) {
+            passwordInput.focus();
+        }
+    }, 100);
 });
 
 // Initialize Firebase
 async function initializeFirebase() {
     try {
         if (typeof firebase !== 'undefined') {
-            console.log('Initializing Firebase...');
+            console.log('🔥 Initializing Firebase...');
             firebase.initializeApp(firebaseConfig);
             database = firebase.database();
             isFirebaseReady = true;
-            console.log('Firebase initialized successfully');
+            console.log('✅ Firebase initialized successfully');
             
             // Test connection
             await testFirebaseConnection();
+            console.log('🔗 Firebase connection test completed');
         } else {
             console.warn('Firebase SDK not loaded');
         }
@@ -54,6 +213,40 @@ async function initializeFirebase() {
         console.error('Firebase initialization failed:', error);
         isFirebaseReady = false;
     }
+}
+
+// Loading indicator functions
+function showLoadingIndicator(message) {
+    const loadingDiv = document.getElementById('loading');
+    const loadingText = loadingDiv.querySelector('span');
+    if (loadingText) {
+        loadingText.textContent = message;
+    }
+    loadingDiv.style.display = 'flex';
+}
+
+function updateLoadingIndicator(message) {
+    const loadingDiv = document.getElementById('loading');
+    const loadingText = loadingDiv.querySelector('span');
+    if (loadingText) {
+        loadingText.textContent = message;
+    }
+}
+
+function hideLoadingIndicator() {
+    const loadingDiv = document.getElementById('loading');
+    loadingDiv.style.display = 'none';
+}
+
+function showErrorIndicator(message) {
+    const errorDiv = document.getElementById('error');
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+}
+
+function hideErrorIndicator() {
+    const errorDiv = document.getElementById('error');
+    errorDiv.style.display = 'none';
 }
 
 // Test Firebase connection
@@ -78,6 +271,504 @@ async function testFirebaseConnection() {
 // Show Firebase status
 function showFirebaseStatus(message, type = 'info') {
     console.log(`Firebase Status: ${message}`);
+}
+
+// Secure data deletion functions
+function confirmDeleteAllData() {
+    // Create a custom modal for password input
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(5px);
+    `;
+    
+    modal.innerHTML = `
+        <div style="
+            background: #1a1a1a;
+            border: 2px solid #dc2626;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(220, 38, 38, 0.3);
+            text-align: center;
+        ">
+            <div style="color: #dc2626; font-size: 3rem; margin-bottom: 1rem;">
+                <i class="bi bi-exclamation-triangle"></i>
+            </div>
+            <h3 style="color: #dc2626; margin-bottom: 1rem; font-weight: 600;">
+                🔄 NEW BOARD TRANSITION
+            </h3>
+            <p style="color: #e2e8f0; margin-bottom: 1.5rem; line-height: 1.5;">
+                This will clear all data from the <strong>previous board</strong> to prepare the database for the new administration.
+                <br><br>
+                <strong>This action is irreversible!</strong>
+            </p>
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; color: #e2e8f0; margin-bottom: 0.5rem; font-weight: 500;">
+                    Enter Board Transition Password:
+                </label>
+                <input 
+                    type="password" 
+                    id="deletePassword" 
+                    placeholder="Board admin password required"
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 2px solid #374151;
+                        border-radius: 8px;
+                        background: #0a0a0a;
+                        color: #e2e8f0;
+                        font-size: 1rem;
+                        text-align: center;
+                    "
+                    onkeypress="if(event.key==='Enter') attemptDeleteAllData()"
+                >
+            </div>
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button 
+                    onclick="closeDeleteModal()"
+                    style="
+                        padding: 0.75rem 1.5rem;
+                        border: 1px solid #374151;
+                        border-radius: 8px;
+                        background: #374151;
+                        color: #e2e8f0;
+                        cursor: pointer;
+                        font-weight: 500;
+                    "
+                >
+                    Cancel
+                </button>
+                <button 
+                    onclick="attemptDeleteAllData()"
+                    style="
+                        padding: 0.75rem 1.5rem;
+                        border: 1px solid #dc2626;
+                        border-radius: 8px;
+                        background: #dc2626;
+                        color: white;
+                        cursor: pointer;
+                        font-weight: 500;
+                    "
+                >
+                    <i class="bi bi-trash"></i> RESET FOR NEW BOARD
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.id = 'deleteModal';
+    
+    // Focus on password input
+    setTimeout(() => {
+        document.getElementById('deletePassword').focus();
+    }, 100);
+}
+
+function closeDeleteModal() {
+    const modal = document.getElementById('deleteModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+async function attemptDeleteAllData() {
+    const passwordInput = document.getElementById('deletePassword');
+    const enteredPassword = passwordInput.value;
+    
+    // Get stored password hash or use default
+    const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
+    
+    // Hash the entered password
+    const enteredPasswordHash = await hashPassword(enteredPassword);
+    
+    if (enteredPasswordHash === storedPasswordHash) {
+        closeDeleteModal();
+        showDeleteConfirmation();
+    } else {
+        // Shake the input field and show error
+        passwordInput.style.borderColor = '#dc2626';
+        passwordInput.style.animation = 'shake 0.5s ease-in-out';
+        passwordInput.value = '';
+        passwordInput.placeholder = '❌ Wrong password! Contact current board admin...';
+        
+        setTimeout(() => {
+            passwordInput.style.borderColor = '#374151';
+            passwordInput.style.animation = '';
+            passwordInput.placeholder = 'Board admin password required';
+        }, 3000);
+    }
+}
+
+function showDeleteConfirmation() {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(5px);
+    `;
+    
+    modal.innerHTML = `
+        <div style="
+            background: #1a1a1a;
+            border: 2px solid #dc2626;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(220, 38, 38, 0.5);
+            text-align: center;
+        ">
+            <div style="color: #dc2626; font-size: 4rem; margin-bottom: 1rem;">
+                <i class="bi bi-fire"></i>
+            </div>
+            <h3 style="color: #dc2626; margin-bottom: 1rem; font-weight: 700;">
+                BOARD TRANSITION CONFIRMATION
+            </h3>
+            <p style="color: #e2e8f0; margin-bottom: 1.5rem; line-height: 1.6; font-size: 1.1rem;">
+                You are about to <strong style="color: #dc2626;">PERMANENTLY CLEAR</strong> all previous board data:
+                <br><br>
+                • Previous prefects' attendance records<br>
+                • Previous board member data<br>
+                • All historical months data<br>
+                • Previous holidays configuration<br>
+                <br>
+                <strong style="color: #fbbf24;">The new board can start fresh!</strong>
+            </p>
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button 
+                    onclick="closeFinalModal()"
+                    style="
+                        padding: 1rem 2rem;
+                        border: 2px solid #10b981;
+                        border-radius: 8px;
+                        background: #10b981;
+                        color: white;
+                        cursor: pointer;
+                        font-weight: 600;
+                        font-size: 1rem;
+                    "
+                >
+                    <i class="bi bi-shield-check"></i> Keep Previous Board Data
+                </button>
+                <button 
+                    onclick="executeDeleteAllData()"
+                    style="
+                        padding: 1rem 2rem;
+                        border: 2px solid #dc2626;
+                        border-radius: 8px;
+                        background: #dc2626;
+                        color: white;
+                        cursor: pointer;
+                        font-weight: 600;
+                        font-size: 1rem;
+                        animation: pulse 2s infinite;
+                    "
+                >
+                    <i class="bi bi-arrow-repeat"></i> CLEAR FOR NEW BOARD
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.id = 'finalModal';
+}
+
+function closeFinalModal() {
+    const modal = document.getElementById('finalModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+async function executeDeleteAllData() {
+    closeFinalModal();
+    
+    if (!isFirebaseReady || !database) {
+        showError('Firebase is not connected. Cannot delete data.');
+        return;
+    }
+    
+    try {
+        showLoading(true, 'Clearing previous board data from BOP25 Server...');
+        
+        // Delete all data from Firebase Realtime Database
+        await database.ref('fingerprintData').remove();
+        
+        showLoading(true, 'Resetting local storage...');
+        
+        // Clear local data
+        extractedData = [];
+        allMonths = [];
+        holidays = new Set();
+        
+        // Clear localStorage
+        localStorage.removeItem('fingerprintData');
+        localStorage.removeItem('extractedData');
+        localStorage.removeItem('allMonths');
+        localStorage.removeItem('holidays');
+        
+        showLoading(true, 'Board transition completed!');
+        
+        // Clear the display
+        const resultsDiv = document.getElementById('results');
+        if (resultsDiv) {
+            resultsDiv.innerHTML = '';
+        }
+        
+        console.log('✅ Previous board data successfully cleared - ready for new board');
+        
+        setTimeout(() => {
+            showLoading(false);
+            showSuccessMessage('� Database cleared! Ready for new board data.');
+        }, 1500);
+        
+    } catch (error) {
+        console.error('❌ Error deleting data:', error);
+        showLoading(false);
+        showError('Failed to clear previous board data from BOP25 Server. Please try again.');
+    }
+}
+
+function showSuccessMessage(message) {
+    const successDiv = document.createElement('div');
+    successDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #10b981;
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+        z-index: 10000;
+        font-weight: 600;
+        text-align: center;
+    `;
+    successDiv.textContent = message;
+    document.body.appendChild(successDiv);
+    
+    setTimeout(() => {
+        successDiv.remove();
+    }, 3000);
+}
+
+// Password Change Functionality
+function changePassword() {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(5px);
+    `;
+    
+    modal.innerHTML = `
+        <div style="
+            background: #1a1a1a;
+            border: 2px solid #10b981;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 450px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(16, 185, 129, 0.3);
+            text-align: center;
+        ">
+            <div style="color: #10b981; font-size: 3rem; margin-bottom: 1rem;">
+                <i class="bi bi-key"></i>
+            </div>
+            <h3 style="color: #10b981; margin-bottom: 1rem; font-weight: 600;">
+                Change Board Admin Password
+            </h3>
+            <p style="color: #e2e8f0; margin-bottom: 1.5rem; line-height: 1.5;">
+                Enter your current password and set a new one for board transitions.
+            </p>
+            
+            <div style="margin-bottom: 1rem; text-align: left;">
+                <label style="display: block; color: #e2e8f0; margin-bottom: 0.5rem; font-weight: 500;">
+                    Current Password:
+                </label>
+                <input 
+                    type="password" 
+                    id="currentPassword" 
+                    placeholder="Enter current password"
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 2px solid #374151;
+                        border-radius: 8px;
+                        background: #0a0a0a;
+                        color: #e2e8f0;
+                        font-size: 1rem;
+                        margin-bottom: 1rem;
+                    "
+                >
+                
+                <label style="display: block; color: #e2e8f0; margin-bottom: 0.5rem; font-weight: 500;">
+                    New Password:
+                </label>
+                <input 
+                    type="password" 
+                    id="newPassword" 
+                    placeholder="Enter new password"
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 2px solid #374151;
+                        border-radius: 8px;
+                        background: #0a0a0a;
+                        color: #e2e8f0;
+                        font-size: 1rem;
+                        margin-bottom: 1rem;
+                    "
+                >
+                
+                <label style="display: block; color: #e2e8f0; margin-bottom: 0.5rem; font-weight: 500;">
+                    Confirm New Password:
+                </label>
+                <input 
+                    type="password" 
+                    id="confirmPassword" 
+                    placeholder="Confirm new password"
+                    style="
+                        width: 100%;
+                        padding: 0.75rem;
+                        border: 2px solid #374151;
+                        border-radius: 8px;
+                        background: #0a0a0a;
+                        color: #e2e8f0;
+                        font-size: 1rem;
+                    "
+                    onkeypress="if(event.key==='Enter') attemptPasswordChange()"
+                >
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button 
+                    onclick="closePasswordModal()"
+                    style="
+                        padding: 0.75rem 1.5rem;
+                        border: 1px solid #374151;
+                        border-radius: 8px;
+                        background: #374151;
+                        color: #e2e8f0;
+                        cursor: pointer;
+                        font-weight: 500;
+                    "
+                >
+                    Cancel
+                </button>
+                <button 
+                    onclick="attemptPasswordChange()"
+                    style="
+                        padding: 0.75rem 1.5rem;
+                        border: 1px solid #10b981;
+                        border-radius: 8px;
+                        background: #10b981;
+                        color: white;
+                        cursor: pointer;
+                        font-weight: 500;
+                    "
+                >
+                    <i class="bi bi-check-circle"></i> Update Password
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.id = 'passwordModal';
+    
+    // Focus on current password input
+    setTimeout(() => {
+        document.getElementById('currentPassword').focus();
+    }, 100);
+}
+
+function closePasswordModal() {
+    const modal = document.getElementById('passwordModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+async function attemptPasswordChange() {
+    const currentPasswordInput = document.getElementById('currentPassword');
+    const newPasswordInput = document.getElementById('newPassword');
+    const confirmPasswordInput = document.getElementById('confirmPassword');
+    
+    const currentPassword = currentPasswordInput.value;
+    const newPassword = newPasswordInput.value;
+    const confirmPassword = confirmPasswordInput.value;
+    
+    // Validate current password
+    const currentPasswordHash = await hashPassword(currentPassword);
+    const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e"; // Default: PrefectsAdmin2025!
+    
+    if (currentPasswordHash !== storedPasswordHash) {
+        showPasswordError(currentPasswordInput, 'Current password is incorrect');
+        return;
+    }
+    
+    // Validate new password
+    if (newPassword.length < 8) {
+        showPasswordError(newPasswordInput, 'New password must be at least 8 characters');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        showPasswordError(confirmPasswordInput, 'Passwords do not match');
+        return;
+    }
+    
+    // Save new password
+    const newPasswordHash = await hashPassword(newPassword);
+    localStorage.setItem('boardAdminPasswordHash', newPasswordHash);
+    
+    closePasswordModal();
+    showSuccessMessage('🔑 Board admin password updated successfully!');
+}
+
+function showPasswordError(inputElement, message) {
+    inputElement.style.borderColor = '#dc2626';
+    inputElement.style.animation = 'shake 0.5s ease-in-out';
+    inputElement.value = '';
+    inputElement.placeholder = `❌ ${message}`;
+    
+    setTimeout(() => {
+        inputElement.style.borderColor = '#374151';
+        inputElement.style.animation = '';
+        inputElement.placeholder = inputElement.id === 'currentPassword' ? 'Enter current password' : 
+                                   inputElement.id === 'newPassword' ? 'Enter new password' : 'Confirm new password';
+    }, 3000);
 }
 
 async function initializeApp() {
@@ -108,14 +799,22 @@ async function loadDataFromStorage() {
 // Load data from Firebase
 async function loadDataFromFirebase() {
     try {
-        showLoading(true);
-        console.log('Loading data from Firebase...');
+        showLoading(true, 'Connecting to BOP25 Server...');
+        console.log('🔥 Loading data from Firebase...');
+        console.log('🔗 Firebase ready status:', isFirebaseReady);
+        console.log('💾 Database reference:', database ? 'Available' : 'Not available');
         
         // Load main attendance data
+        showLoading(true, 'Loading attendance data from BOP25 Server...');
+        console.log('📊 Checking for attendance data...');
         const attendanceSnapshot = await database.ref('fingerprintData/attendance').once('value');
+        console.log('📋 Attendance snapshot exists:', attendanceSnapshot.exists());
+        
         if (attendanceSnapshot.exists()) {
             const data = attendanceSnapshot.val();
+            console.log('📁 Raw data from Firebase:', data);
             extractedData = data.extractedData || [];
+            console.log('👥 Extracted employees count:', extractedData.length);
             
             // Convert ISO string timestamps back to Date objects and validate data structure
             extractedData.forEach(employee => {
@@ -142,26 +841,42 @@ async function loadDataFromFirebase() {
         }
         
         // Load months data
+        showLoading(true, 'Loading months data...');
+        console.log('📅 Checking for months data...');
         const monthsSnapshot = await database.ref('fingerprintData/months').once('value');
+        console.log('📅 Months snapshot exists:', monthsSnapshot.exists());
         if (monthsSnapshot.exists()) {
             const data = monthsSnapshot.val();
             allMonths = data.allMonths || [];
+            console.log('📅 Loaded months:', allMonths.length);
         }
         
         // Load holidays data
+        showLoading(true, 'Loading holidays data...');
+        console.log('🏖️ Checking for holidays data...');
         const holidaysSnapshot = await database.ref('fingerprintData/holidays').once('value');
+        console.log('🏖️ Holidays snapshot exists:', holidaysSnapshot.exists());
         if (holidaysSnapshot.exists()) {
             const data = holidaysSnapshot.val();
             holidays = new Set(data.holidays || []);
+            console.log('🏖️ Loaded holidays:', holidays.size);
         }
         
         // Display data if available
+        showLoading(true, 'Preparing display...');
+        console.log('🎯 Final extractedData length:', extractedData.length);
         if (extractedData.length > 0) {
+            console.log('✅ Displaying data...');
             displayDataWithFilters();
             showDataStatus();
+            showLoading(true, 'Data loaded successfully!');
+            setTimeout(() => showLoading(false), 1000);
+        } else {
+            console.log('❌ No data to display');
+            showLoading(true, 'No existing data found');
+            setTimeout(() => showLoading(false), 2000);
         }
         
-        showLoading(false);
         console.log('Data loaded from Firebase successfully');
         
     } catch (error) {
@@ -185,9 +900,11 @@ async function saveDataFromStorage() {
 // Save data to Firebase
 async function saveDataToFirebase() {
     try {
+        showLoading(true, 'Saving data to BOP25 Server...');
         console.log('Saving data to Firebase...');
         
         // Prepare data for Firebase (convert Date objects to ISO strings)
+        showLoading(true, 'Preparing data for BOP25 Server...');
         const dataToSave = extractedData.map(employee => ({
             ...employee,
             attendanceData: employee.attendanceData.map(record => ({
@@ -220,15 +937,21 @@ async function saveDataToFirebase() {
             lastUpdated: timestamp
         };
         
+        showLoading(true, 'Uploading to BOP25 Server...');
         await database.ref().update(updates);
         console.log('Data saved to Firebase successfully');
         
         // Also save to localStorage as backup
+        showLoading(true, 'Creating local backup...');
         saveDataToLocalStorage();
+        
+        showLoading(true, 'Save completed!');
+        setTimeout(() => showLoading(false), 1000);
         
     } catch (error) {
         console.error('Error saving data to Firebase:', error);
-        showError('Warning: Could not save data to Firebase. Saved locally instead.');
+        showLoading(false);
+        showError('Warning: Could not save data to BOP25 Server. Saved locally instead.');
         // Fallback to localStorage
         saveDataToLocalStorage();
     }
@@ -342,7 +1065,7 @@ function processFile(file) {
     }
     
     // Show loading state
-    showLoading(true);
+    showLoading(true, 'Reading Excel file...');
     showFileName(file.name);
     hideError();
     
@@ -350,6 +1073,7 @@ function processFile(file) {
     const reader = new FileReader();
     reader.onload = function(e) {
         try {
+            showLoading(true, 'Processing Excel data...');
             const data = e.target.result;
             workbook = XLSX.read(data, { type: 'binary' });
             
@@ -376,6 +1100,7 @@ function processFile(file) {
 
 // Merge new data with existing data
 async function mergeNewDataWithExisting() {
+    showLoading(true, 'Extracting employee data...');
     // Extract new data from the uploaded file
     const newData = [];
     workbook.SheetNames.forEach(sheetName => {
@@ -388,6 +1113,7 @@ async function mergeNewDataWithExisting() {
         return;
     }
     
+    showLoading(true, 'Merging with existing data...');
     // If no existing data, use new data as is
     if (extractedData.length === 0) {
         extractedData = newData;
@@ -396,15 +1122,21 @@ async function mergeNewDataWithExisting() {
         mergeEmployeeData(newData);
     }
     
+    showLoading(true, 'Updating months list...');
     // Update months list
     updateMonthsList();
     
+    showLoading(true, 'Saving data...');
     // Save to storage
     await saveDataFromStorage();
     
+    showLoading(true, 'Displaying results...');
     // Display updated data
     displayDataWithFilters();
     showDataStatus();
+    
+    showLoading(true, 'File processed successfully!');
+    setTimeout(() => showLoading(false), 1500);
 }
 
 // Merge employee data (combine attendance records for same employees)
@@ -513,9 +1245,13 @@ function hideError() {
 }
 
 // Show/hide loading state
-function showLoading(show) {
+function showLoading(show, message = 'Processing...') {
     const loading = document.getElementById('loading');
     if (loading) {
+        const loadingText = loading.querySelector('span');
+        if (loadingText && message) {
+            loadingText.textContent = message;
+        }
         loading.style.display = show ? 'flex' : 'none';
     }
 }
@@ -897,6 +1633,13 @@ function displayDataWithFilters(selectedMonth = 'all') {
         }));
     }
     
+    // Sort by attendance (present days) - best to lowest
+    filteredData = filteredData.sort((a, b) => {
+        const aPresentDays = getPresentDaysCount(a.attendanceData);
+        const bPresentDays = getPresentDaysCount(b.attendanceData);
+        return bPresentDays - aPresentDays; // Descending order (best first)
+    });
+    
     // Create month selector
     const monthOptions = allMonths.map(month => {
         const [year, monthNum] = month.split('-');
@@ -1018,18 +1761,17 @@ function displayDataWithFilters(selectedMonth = 'all') {
                         <table class="data-table">
                             <thead>
                                 <tr>
-                                    <th>#</th>
+                                    <th>Ranking</th>
                                     <th>Prefect Name</th>
                                     <th class="mobile-hide">Morning Entrance Times</th>
                                     <th>Working Days</th>
-                                    <th>Sheet</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${filteredData.map((record, index) => `
                                     <tr class="table-row-fade" style="animation-delay: ${400 + (index * 50)}ms">
-                                        <td><span class="row-number">${index + 1}</span></td>
+                                        <td><span class="ranking-badge rank-${index + 1}">#${index + 1}</span></td>
                                         <td><span class="prefect-name">${record.name}</span></td>
                                         <td class="mobile-hide">
                                             ${record.attendanceData.filter(r => r.morning && r.morning.in).length > 0 ? `
@@ -1044,15 +1786,18 @@ function displayDataWithFilters(selectedMonth = 'all') {
                                             ` : '<span class="no-data">No morning entries</span>'}
                                         </td>
                                         <td>
-                                            <span class="days-badge">${getPresentDaysCount(record.attendanceData)} days</span>
+                                            <div class="days-summary">
+                                                <span class="days-badge">${getPresentDaysCount(record.attendanceData)} Present</span>
+                                                <span class="absent-days">${getWorkingDaysCount(record.attendanceData) - getPresentDaysCount(record.attendanceData)} Absent</span>
+                                            </div>
                                             <div class="days-detail">
-                                                Working: ${getWorkingDaysCount(record.attendanceData)} | Holidays: ${record.attendanceData.filter(r => {
+                                                Working: ${getWorkingDaysCount(record.attendanceData)} | 
+                                                Holidays: ${record.attendanceData.filter(r => {
                                                     const dateString = r.fullDate ? r.fullDate.toISOString().split('T')[0] : null;
                                                     return dateString && isHoliday(dateString);
                                                 }).length}
                                             </div>
                                         </td>
-                                        <td><span class="sheet-name">${record.sheet}</span></td>
                                         <td>
                                             <button class="btn-view" data-employee-name="${record.name}" data-selected-month="${selectedMonth}" title="View Details">
                                                 <i class="bi bi-eye"></i>
@@ -1400,13 +2145,38 @@ function displayDataWithFilters(selectedMonth = 'all') {
                 background-color: #0f0f0f;
             }
             
-            .row-number {
-                background: #374151;
-                color: #10b981;
+            .ranking-badge {
                 padding: 0.25rem 0.5rem;
                 border-radius: 6px;
-                font-weight: 500;
+                font-weight: 600;
                 font-size: 0.75rem;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 2rem;
+            }
+            
+            .rank-1 {
+                background: linear-gradient(135deg, #ffd700, #ffb700);
+                color: #1a1a1a;
+                box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+            }
+            
+            .rank-2 {
+                background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+                color: #1a1a1a;
+                box-shadow: 0 2px 8px rgba(192, 192, 192, 0.3);
+            }
+            
+            .rank-3 {
+                background: linear-gradient(135deg, #cd7f32, #b8860b);
+                color: #fff;
+                box-shadow: 0 2px 8px rgba(205, 127, 50, 0.3);
+            }
+            
+            .ranking-badge:not(.rank-1):not(.rank-2):not(.rank-3) {
+                background: #374151;
+                color: #10b981;
             }
             
             .prefect-name {
@@ -1448,17 +2218,36 @@ function displayDataWithFilters(selectedMonth = 'all') {
             .days-badge {
                 background: #065f46;
                 color: #a7f3d0;
-                padding: 0.25rem 0.75rem;
+                padding: 4px 8px;
                 border-radius: 8px;
                 font-weight: 600;
-                font-size: 0.875rem;
+                font-size: 0.75rem;
                 border: 1px solid #047857;
+                display: inline-block;
             }
             
             .days-detail {
                 font-size: 0.75rem;
                 color: #9ca3af;
                 margin-top: 0.25rem;
+            }
+            
+            .days-summary {
+                display: flex;
+                gap: 0.5rem;
+                align-items: center;
+                margin-bottom: 0.25rem;
+                flex-wrap: wrap;
+            }
+            
+            .absent-days {
+                background-color: #dc2626;
+                color: white;
+                padding: 4px 8px;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 0.75rem;
+                display: inline-block;
             }
             
             .sheet-name {
@@ -1661,12 +2450,6 @@ function displayDataWithFilters(selectedMonth = 'all') {
                     padding-right: 1rem;
                 }
                 
-                /* Hide less important columns on very small screens */
-                .data-table th:nth-child(5),
-                .data-table td:nth-child(5) {
-                    display: none;
-                }
-                
                 /* Compact badges */
                 .time-badges {
                     flex-direction: column;
@@ -1767,8 +2550,20 @@ function displayDataWithFilters(selectedMonth = 'all') {
     
     // Add event listeners for view buttons
     setTimeout(() => {
+        // Remove any existing event listeners first by cloning and replacing elements
+        const oldButtons = document.querySelectorAll('.btn-view');
+        oldButtons.forEach(button => {
+            const newButton = button.cloneNode(true);
+            button.parentNode.replaceChild(newButton, button);
+        });
+        
+        // Now add fresh event listeners to the new buttons
         document.querySelectorAll('.btn-view').forEach(button => {
-            button.addEventListener('click', function() {
+            button.addEventListener('click', function(e) {
+                // Prevent any propagation or default behavior
+                e.preventDefault();
+                e.stopPropagation();
+                
                 const employeeName = this.getAttribute('data-employee-name');
                 const selectedMonth = this.getAttribute('data-selected-month');
                 console.log('Opening details for:', employeeName, selectedMonth);
@@ -1933,6 +2728,22 @@ function showEmployeeDetails(employeeName, selectedMonth) {
                     }).length}</h4>
                     <p class="summary-label">Late Days</p>
                     <small class="summary-note">> 6:45 AM</small>
+                </div>
+            </div>
+            
+            <div class="summary-card absent-card">
+                <div class="summary-icon">
+                    <i class="bi bi-person-x"></i>
+                </div>
+                <div class="summary-content">
+                    <h4 class="summary-number">${attendanceToShow.filter(r => {
+                        const isWeekend = r.dayOfWeek === 'SUN' || r.dayOfWeek === 'SAT';
+                        const dateString = r.fullDate ? r.fullDate.toISOString().split('T')[0] : null;
+                        const isHolidayDate = dateString && isHoliday(dateString);
+                        return !r.morning.in && !isWeekend && !isHolidayDate;
+                    }).length}</h4>
+                    <p class="summary-label">Absent Days</p>
+                    <small class="summary-note">No morning entrance</small>
                 </div>
             </div>
         </div>
@@ -2114,6 +2925,10 @@ function showEmployeeDetails(employeeName, selectedMonth) {
                 border-left: 4px solid #f59e0b;
             }
             
+            .absent-card {
+                border-left: 4px solid #dc2626;
+            }
+            
             .summary-icon {
                 width: 48px;
                 height: 48px;
@@ -2137,6 +2952,11 @@ function showEmployeeDetails(employeeName, selectedMonth) {
             .late-card .summary-icon {
                 background: rgba(245, 158, 11, 0.2);
                 color: #f59e0b;
+            }
+            
+            .absent-card .summary-icon {
+                background: rgba(220, 38, 38, 0.2);
+                color: #dc2626;
             }
             
             .summary-icon i {
@@ -2548,7 +3368,141 @@ function downloadComprehensiveExcelAnalysis(selectedMonth) {
         return;
     }
     
-    // Create a worksheet for each month
+    // Create a summary dashboard worksheet first
+    const summaryData = [];
+    summaryData.push(['📊 BOP25 PREFECTS ATTENDANCE REPORT', '', '', '', '', '', '', '']);
+    summaryData.push(['Generated:', new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString(), '', '', '', '', '', '']);
+    summaryData.push(['Period:', selectedMonth === 'all' ? 'All Available Months' : new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }), '', '', '', '', '', '']);
+    summaryData.push(['Total Prefects:', extractedData.length, '', '', '', '', '', '']);
+    summaryData.push(['', '', '', '', '', '', '', '']);
+    
+    // Add month-wise summary statistics
+    summaryData.push(['📅 MONTHLY OVERVIEW', '', '', '', '', '', '', '']);
+    summaryData.push(['Month', 'Total Prefects', 'Avg Attendance %', 'Top Performer', 'Most Improved', 'Needs Attention', '', '']);
+    
+    monthsToProcess.forEach(monthKey => {
+        const [year, month] = monthKey.split('-');
+        const monthName = new Date(year, month - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        
+        // Calculate month statistics
+        const monthData = extractedData.filter(employee => {
+            return employee.attendanceData.some(record => 
+                record.year == year && record.month == month
+            );
+        }).map(employee => ({
+            ...employee,
+            attendanceData: employee.attendanceData.filter(record => 
+                record.year == year && record.month == month
+            )
+        }));
+        
+        if (monthData.length === 0) return;
+        
+        // Calculate attendance percentages for ranking
+        const employeeStats = monthData.map(employee => {
+            const workingDays = getWorkingDaysCount(employee.attendanceData);
+            const presentDays = getPresentDaysCount(employee.attendanceData);
+            const attendanceRate = workingDays > 0 ? Math.round((presentDays / workingDays) * 100) : 0;
+            
+            return {
+                name: employee.name,
+                attendanceRate,
+                presentDays,
+                workingDays,
+                lateCount: employee.attendanceData.filter(r => {
+                    const isWeekend = r.dayOfWeek === 'SUN' || r.dayOfWeek === 'SAT';
+                    const dateString = r.fullDate ? r.fullDate.toISOString().split('T')[0] : null;
+                    const isHolidayDate = dateString && isHoliday(dateString);
+                    return r.morning.in && r.morning.in > '06:45' && !isWeekend && !isHolidayDate;
+                }).length
+            };
+        });
+        
+        const avgAttendance = Math.round(employeeStats.reduce((sum, emp) => sum + emp.attendanceRate, 0) / employeeStats.length);
+        const topPerformer = employeeStats.reduce((top, emp) => emp.attendanceRate > top.attendanceRate ? emp : top);
+        const needsAttention = employeeStats.filter(emp => emp.attendanceRate < 75).length > 0 
+            ? employeeStats.reduce((worst, emp) => emp.attendanceRate < worst.attendanceRate ? emp : worst).name
+            : 'None';
+        
+        summaryData.push([
+            monthName,
+            monthData.length,
+            avgAttendance + '%',
+            `${topPerformer.name} (${topPerformer.attendanceRate}%)`,
+            'TBD', // Could add logic for improvement tracking
+            needsAttention,
+            '', ''
+        ]);
+    });
+    
+    summaryData.push(['', '', '', '', '', '', '', '']);
+    summaryData.push(['🏆 PERFORMANCE CATEGORIES', '', '', '', '', '', '', '']);
+    summaryData.push(['Excellent (95-100%)', 'Good (85-94%)', 'Average (75-84%)', 'Needs Improvement (<75%)', '', '', '', '']);
+    
+    // Create summary worksheet with enhanced styling
+    const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
+    
+    // Enhanced styling for summary sheet
+    const summaryRange = XLSX.utils.decode_range(summaryWs['!ref']);
+    
+    // Title styling
+    const titleCell = XLSX.utils.encode_cell({r: 0, c: 0});
+    summaryWs[titleCell].s = {
+        fill: { fgColor: { rgb: "1F4E79" } },
+        font: { color: { rgb: "FFFFFF" }, bold: true, sz: 16 },
+        alignment: { horizontal: "center", vertical: "center" }
+    };
+    
+    // Merge title cell
+    if (!summaryWs['!merges']) summaryWs['!merges'] = [];
+    summaryWs['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
+    
+    // Info cells styling
+    for (let r = 1; r <= 4; r++) {
+        const labelCell = XLSX.utils.encode_cell({r: r, c: 0});
+        const valueCell = XLSX.utils.encode_cell({r: r, c: 1});
+        if (summaryWs[labelCell]) {
+            summaryWs[labelCell].s = {
+                font: { bold: true, sz: 11 },
+                fill: { fgColor: { rgb: "E7E6E6" } }
+            };
+        }
+        if (summaryWs[valueCell]) {
+            summaryWs[valueCell].s = {
+                font: { sz: 11 },
+                fill: { fgColor: { rgb: "F8F9FA" } }
+            };
+        }
+    }
+    
+    // Column headers styling
+    const headerRow = 7;
+    for (let c = 0; c <= 7; c++) {
+        const headerCell = XLSX.utils.encode_cell({r: headerRow, c: c});
+        if (summaryWs[headerCell]) {
+            summaryWs[headerCell].s = {
+                fill: { fgColor: { rgb: "366092" } },
+                font: { color: { rgb: "FFFFFF" }, bold: true, sz: 11 },
+                alignment: { horizontal: "center", vertical: "center" },
+                border: {
+                    top: { style: "thin", color: { rgb: "000000" } },
+                    bottom: { style: "thin", color: { rgb: "000000" } },
+                    left: { style: "thin", color: { rgb: "000000" } },
+                    right: { style: "thin", color: { rgb: "000000" } }
+                }
+            };
+        }
+    }
+    
+    // Set column widths for summary
+    summaryWs['!cols'] = [
+        { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 10 }, { wch: 10 }
+    ];
+    
+    // Add summary worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, summaryWs, '📊 Dashboard');
+    
+    // Create a worksheet for each month with enhanced formatting
     monthsToProcess.forEach(monthKey => {
         const [year, month] = monthKey.split('-');
         const analysisYear = parseInt(year);
@@ -2570,16 +3524,26 @@ function downloadComprehensiveExcelAnalysis(selectedMonth) {
         
         if (monthData.length === 0) return;
         
-        // Create worksheet data
+        // Create worksheet data with enhanced headers
         const sheetData = [];
         
-        // Header with month and year
-        sheetData.push([monthName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', 'Summary']);
-        sheetData.push(['S.No', 'Name', ...Array.from({length: daysInMonth}, (_, i) => i + 1), 'Total Present', 'Total Late', 'On Time', 'Working Days', 'Attendance %']);
+        // Header with month and year and metadata
+        sheetData.push([`📅 ${monthName} - BOP25 Prefects Attendance`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '📊 Performance Summary']);
+        sheetData.push([`Generated: ${new Date().toLocaleDateString()} | Total Prefects: ${monthData.length} | Working Days: ${getUniqueWorkingDaysInMonth(monthData, analysisYear, analysisMonth)}`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        sheetData.push(['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
         
-        // Add data for each employee
+        // Enhanced column headers with better descriptions
+        const dayHeaders = Array.from({length: daysInMonth}, (_, i) => {
+            const date = new Date(analysisYear, analysisMonth - 1, i + 1);
+            const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+            return `${i + 1}\n${dayName}`;
+        });
+        
+        sheetData.push(['S.No', 'Prefect Name', 'ID', ...dayHeaders, '✅ Present', '⏰ Late', '🎯 On Time', '📅 Work Days', '📊 Attend %', '🏆 Grade', '📝 Notes']);
+        
+        // Add data for each employee with performance grading
         monthData.forEach((employee, index) => {
-            const row = [index + 1, employee.name];
+            const row = [index + 1, employee.name, employee.employeeId || 'N/A'];
             
             // Create attendance map for quick lookup
             const attendanceMap = {};
@@ -2590,11 +3554,13 @@ function downloadComprehensiveExcelAnalysis(selectedMonth) {
                 }
             });
             
-            // Fill daily attendance
+            // Fill daily attendance with enhanced formatting
             let presentCount = 0;
             let lateCount = 0;
             let onTimeCount = 0;
             let workingDaysCount = 0;
+            let consecutiveAbsent = 0;
+            let maxConsecutiveAbsent = 0;
             
             for (let day = 1; day <= daysInMonth; day++) {
                 const record = attendanceMap[day];
@@ -2605,9 +3571,11 @@ function downloadComprehensiveExcelAnalysis(selectedMonth) {
                 const isWeekend = dayOfWeek === 'SAT' || dayOfWeek === 'SUN';
                 
                 if (isHolidayDate) {
-                    row.push('H'); // Holiday
+                    row.push('🏖️ H'); // Holiday with emoji
+                    consecutiveAbsent = 0;
                 } else if (isWeekend) {
-                    row.push('W'); // Weekend
+                    row.push('🏠 W'); // Weekend with emoji
+                    consecutiveAbsent = 0;
                 } else {
                     workingDaysCount++;
                     if (record && record.morning.in) {
@@ -2615,68 +3583,133 @@ function downloadComprehensiveExcelAnalysis(selectedMonth) {
                         const isLate = hours > 6 || (hours === 6 && minutes > 45);
                         
                         if (isLate) {
-                            row.push(`L\n${record.morning.in}`); // Late with time
+                            row.push(`⏰ L\n${record.morning.in}`); // Late with emoji and time
                             lateCount++;
                         } else {
-                            row.push(`P\n${record.morning.in}`); // Present on time with time
+                            row.push(`✅ P\n${record.morning.in}`); // Present on time with emoji and time
                             onTimeCount++;
                         }
                         presentCount++;
+                        consecutiveAbsent = 0;
                     } else {
-                        row.push('A'); // Absent
+                        row.push('❌ A'); // Absent with emoji
+                        consecutiveAbsent++;
+                        maxConsecutiveAbsent = Math.max(maxConsecutiveAbsent, consecutiveAbsent);
                     }
                 }
             }
             
-            // Add summary columns
+            // Enhanced summary columns with performance grading
             const attendanceRate = workingDaysCount > 0 ? Math.round((presentCount / workingDaysCount) * 100) : 0;
-            row.push(presentCount, lateCount, onTimeCount, workingDaysCount, `${attendanceRate}%`);
+            let grade = '';
+            let notes = '';
+            
+            if (attendanceRate >= 95) {
+                grade = '🏆 Excellent';
+            } else if (attendanceRate >= 85) {
+                grade = '🥈 Good';
+            } else if (attendanceRate >= 75) {
+                grade = '🥉 Average';
+            } else {
+                grade = '⚠️ Needs Improvement';
+            }
+            
+            // Generate notes
+            if (maxConsecutiveAbsent >= 3) {
+                notes += `Max ${maxConsecutiveAbsent} consecutive absences. `;
+            }
+            if (lateCount > workingDaysCount * 0.3) {
+                notes += 'Frequent lateness. ';
+            }
+            if (attendanceRate >= 95 && lateCount <= 2) {
+                notes += 'Excellent performance! ';
+            }
+            if (notes === '') {
+                notes = 'Good attendance pattern.';
+            }
+            
+            row.push(presentCount, lateCount, onTimeCount, workingDaysCount, `${attendanceRate}%`, grade, notes.trim());
             
             sheetData.push(row);
         });
         
-        // Add legend
+        // Add enhanced statistics and insights
         sheetData.push([]);
-        sheetData.push(['Legend:']);
-        sheetData.push(['P = Present (On Time)', 'L = Late', 'A = Absent', 'H = Holiday', 'W = Weekend']);
+        sheetData.push(['📈 MONTHLY INSIGHTS & STATISTICS', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        
+        const totalWorkingDays = getUniqueWorkingDaysInMonth(monthData, analysisYear, analysisMonth);
+        const avgAttendanceRate = monthData.length > 0 ? 
+            Math.round(monthData.reduce((sum, emp) => {
+                const workingDays = getWorkingDaysCount(emp.attendanceData);
+                const presentDays = getPresentDaysCount(emp.attendanceData);
+                return sum + (workingDays > 0 ? (presentDays / workingDays) * 100 : 0);
+            }, 0) / monthData.length) : 0;
+        
+        const excellentPerformers = monthData.filter(emp => {
+            const workingDays = getWorkingDaysCount(emp.attendanceData);
+            const presentDays = getPresentDaysCount(emp.attendanceData);
+            return workingDays > 0 && ((presentDays / workingDays) * 100) >= 95;
+        }).length;
+        
+        sheetData.push(['📊 Overall Statistics:', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        sheetData.push([`• Working Days in Month: ${totalWorkingDays}`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        sheetData.push([`• Average Attendance Rate: ${avgAttendanceRate}%`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        sheetData.push([`• Excellent Performers (95%+): ${excellentPerformers}/${monthData.length} prefects`, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        
+        sheetData.push([]);
+        sheetData.push(['📋 LEGEND & STATUS CODES:', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        sheetData.push(['✅ P = Present (On Time) | ⏰ L = Late (After 6:45 AM) | ❌ A = Absent | 🏖️ H = Holiday | 🏠 W = Weekend', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        sheetData.push(['🏆 Excellent: 95-100% | 🥈 Good: 85-94% | 🥉 Average: 75-84% | ⚠️ Needs Improvement: <75%', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
         
         // Create worksheet
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         
-        // Set column widths - make day columns wider to accommodate time
+        // Enhanced column widths
         const colWidths = [
             { wch: 6 },  // S.No
-            { wch: 20 }, // Name
-            ...Array.from({length: daysInMonth}, () => ({ wch: 8 })), // Day columns (wider for time)
-            { wch: 12 }, // Total Present
-            { wch: 10 }, // Total Late
+            { wch: 25 }, // Name (wider)
+            { wch: 12 }, // ID
+            ...Array.from({length: daysInMonth}, () => ({ wch: 10 })), // Day columns (wider for emoji + time)
+            { wch: 10 }, // Present
+            { wch: 8 },  // Late
             { wch: 10 }, // On Time
-            { wch: 12 }, // Working Days
-            { wch: 12 }  // Attendance %
+            { wch: 10 }, // Work Days
+            { wch: 10 }, // Attend %
+            { wch: 18 }, // Grade (wider for emojis)
+            { wch: 30 }  // Notes (much wider)
         ];
         ws['!cols'] = colWidths;
         
-        // Add cell styling and colors
+        // Enhanced cell styling and colors
         const range = XLSX.utils.decode_range(ws['!ref']);
         
-        // Style header rows
+        // Style title row (enhanced)
         for (let C = range.s.c; C <= range.e.c; ++C) {
-            // First row (month header)
+            // First row (month header with enhanced styling)
             const headerCell = XLSX.utils.encode_cell({r: 0, c: C});
             if (!ws[headerCell]) ws[headerCell] = {t: 's', v: ''};
             ws[headerCell].s = {
-                fill: { fgColor: { rgb: "366092" } },
+                fill: { fgColor: { rgb: "1F4E79" } },
                 font: { color: { rgb: "FFFFFF" }, bold: true, sz: 14 },
                 alignment: { horizontal: "center", vertical: "center" }
             };
             
-            // Second row (column headers)
-            const colHeaderCell = XLSX.utils.encode_cell({r: 1, c: C});
+            // Second row (metadata)
+            const metaCell = XLSX.utils.encode_cell({r: 1, c: C});
+            if (!ws[metaCell]) ws[metaCell] = {t: 's', v: ''};
+            ws[metaCell].s = {
+                fill: { fgColor: { rgb: "E7E6E6" } },
+                font: { italic: true, sz: 10 },
+                alignment: { horizontal: "center", vertical: "center" }
+            };
+            
+            // Column headers (4th row)
+            const colHeaderCell = XLSX.utils.encode_cell({r: 3, c: C});
             if (!ws[colHeaderCell]) ws[colHeaderCell] = {t: 's', v: ''};
             ws[colHeaderCell].s = {
-                fill: { fgColor: { rgb: "D9E2F3" } },
-                font: { bold: true, sz: 10 },
-                alignment: { horizontal: "center", vertical: "center" },
+                fill: { fgColor: { rgb: "366092" } },
+                font: { color: { rgb: "FFFFFF" }, bold: true, sz: 10 },
+                alignment: { horizontal: "center", vertical: "center", wrapText: true },
                 border: {
                     top: { style: "thin", color: { rgb: "000000" } },
                     bottom: { style: "thin", color: { rgb: "000000" } },
@@ -2686,8 +3719,11 @@ function downloadComprehensiveExcelAnalysis(selectedMonth) {
             };
         }
         
-        // Style data rows with colors based on attendance
-        for (let R = 2; R < sheetData.length - 3; ++R) { // Exclude legend rows
+        // Enhanced data row styling with performance-based colors
+        const dataStartRow = 4;
+        const dataEndRow = 4 + monthData.length - 1;
+        
+        for (let R = dataStartRow; R <= dataEndRow; ++R) {
             for (let C = 0; C <= range.e.c; ++C) {
                 const cellAddress = XLSX.utils.encode_cell({r: R, c: C});
                 if (!ws[cellAddress]) continue;
@@ -2704,78 +3740,173 @@ function downloadComprehensiveExcelAnalysis(selectedMonth) {
                     font: { sz: 9 }
                 };
                 
-                // Color coding based on cell content
-                if (C >= 2 && C <= daysInMonth + 1) { // Day columns
+                // Enhanced color coding based on cell content and position
+                if (C >= 3 && C <= daysInMonth + 2) { // Day columns (adjusted for ID column)
                     if (typeof cellValue === 'string') {
-                        if (cellValue.startsWith('P')) {
-                            // Present (Green)
+                        if (cellValue.includes('✅ P')) {
+                            // Present (Enhanced Green)
                             cellStyle.fill = { fgColor: { rgb: "C6EFCE" } };
-                            cellStyle.font.color = { rgb: "006100" };
-                        } else if (cellValue.startsWith('L')) {
-                            // Late (Orange/Yellow)
+                            cellStyle.font = { color: { rgb: "006100" }, bold: true, sz: 9 };
+                        } else if (cellValue.includes('⏰ L')) {
+                            // Late (Enhanced Orange)
                             cellStyle.fill = { fgColor: { rgb: "FFEB9C" } };
-                            cellStyle.font.color = { rgb: "9C5700" };
-                        } else if (cellValue === 'A') {
-                            // Absent (Red)
+                            cellStyle.font = { color: { rgb: "9C5700" }, bold: true, sz: 9 };
+                        } else if (cellValue.includes('❌ A')) {
+                            // Absent (Enhanced Red)
                             cellStyle.fill = { fgColor: { rgb: "FFC7CE" } };
-                            cellStyle.font.color = { rgb: "9C0006" };
-                        } else if (cellValue === 'H') {
-                            // Holiday (Blue)
+                            cellStyle.font = { color: { rgb: "9C0006" }, bold: true, sz: 9 };
+                        } else if (cellValue.includes('🏖️ H')) {
+                            // Holiday (Enhanced Blue)
                             cellStyle.fill = { fgColor: { rgb: "BDD7EE" } };
-                            cellStyle.font.color = { rgb: "0070C0" };
-                        } else if (cellValue === 'W') {
-                            // Weekend (Gray)
+                            cellStyle.font = { color: { rgb: "0070C0" }, bold: true, sz: 9 };
+                        } else if (cellValue.includes('🏠 W')) {
+                            // Weekend (Enhanced Gray)
                             cellStyle.fill = { fgColor: { rgb: "E2E2E2" } };
-                            cellStyle.font.color = { rgb: "7C7C7C" };
+                            cellStyle.font = { color: { rgb: "7C7C7C" }, bold: true, sz: 9 };
                         }
                     }
-                } else if (C === 0 || C === 1) {
-                    // S.No and Name columns
+                } else if (C === 0 || C === 1 || C === 2) {
+                    // S.No, Name, and ID columns
                     cellStyle.fill = { fgColor: { rgb: "F2F2F2" } };
-                    cellStyle.font.bold = true;
-                    if (C === 1) cellStyle.alignment.horizontal = "left";
-                } else if (C > daysInMonth + 1) {
+                    cellStyle.font = { bold: true, sz: 10 };
+                    if (C === 1) { // Name column
+                        cellStyle.alignment.horizontal = "left";
+                        cellStyle.font.sz = 11;
+                    }
+                } else if (C === range.e.c - 1) { // Grade column
+                    // Color based on grade
+                    if (typeof cellValue === 'string') {
+                        if (cellValue.includes('🏆 Excellent')) {
+                            cellStyle.fill = { fgColor: { rgb: "C6EFCE" } };
+                            cellStyle.font = { color: { rgb: "006100" }, bold: true };
+                        } else if (cellValue.includes('🥈 Good')) {
+                            cellStyle.fill = { fgColor: { rgb: "FFEB9C" } };
+                            cellStyle.font = { color: { rgb: "9C5700" }, bold: true };
+                        } else if (cellValue.includes('🥉 Average')) {
+                            cellStyle.fill = { fgColor: { rgb: "FCE4D6" } };
+                            cellStyle.font = { color: { rgb: "C65911" }, bold: true };
+                        } else if (cellValue.includes('⚠️ Needs')) {
+                            cellStyle.fill = { fgColor: { rgb: "FFC7CE" } };
+                            cellStyle.font = { color: { rgb: "9C0006" }, bold: true };
+                        }
+                    }
+                } else if (C >= daysInMonth + 3) {
                     // Summary columns
                     cellStyle.fill = { fgColor: { rgb: "E7E6E6" } };
                     cellStyle.font.bold = true;
+                    
+                    // Special formatting for attendance percentage
+                    if (C === range.e.c - 3) { // Attendance % column
+                        if (typeof cellValue === 'string' && cellValue.includes('%')) {
+                            const percentage = parseInt(cellValue);
+                            if (percentage >= 95) {
+                                cellStyle.fill = { fgColor: { rgb: "C6EFCE" } };
+                                cellStyle.font.color = { rgb: "006100" };
+                            } else if (percentage >= 85) {
+                                cellStyle.fill = { fgColor: { rgb: "FFEB9C" } };
+                                cellStyle.font.color = { rgb: "9C5700" };
+                            } else if (percentage >= 75) {
+                                cellStyle.fill = { fgColor: { rgb: "FCE4D6" } };
+                                cellStyle.font.color = { rgb: "C65911" };
+                            } else {
+                                cellStyle.fill = { fgColor: { rgb: "FFC7CE" } };
+                                cellStyle.font.color = { rgb: "9C0006" };
+                            }
+                        }
+                    }
                 }
                 
                 ws[cellAddress].s = cellStyle;
             }
         }
         
-        // Style legend
-        const legendStartRow = sheetData.length - 2;
-        for (let R = legendStartRow; R < sheetData.length; ++R) {
-            for (let C = 0; C <= 4; ++C) {
+        // Style insights and legend sections
+        const insightsStartRow = dataEndRow + 2;
+        for (let R = insightsStartRow; R < sheetData.length; ++R) {
+            for (let C = 0; C <= 10; ++C) {
                 const cellAddress = XLSX.utils.encode_cell({r: R, c: C});
                 if (ws[cellAddress]) {
-                    ws[cellAddress].s = {
-                        font: { italic: true, sz: 9 },
+                    let style = {
                         alignment: { horizontal: "left", vertical: "center" }
                     };
+                    
+                    if (ws[cellAddress].v && ws[cellAddress].v.includes('📈')) {
+                        // Insights header
+                        style.font = { bold: true, sz: 12, color: { rgb: "1F4E79" } };
+                        style.fill = { fgColor: { rgb: "E7E6E6" } };
+                    } else if (ws[cellAddress].v && ws[cellAddress].v.includes('📊')) {
+                        // Statistics header
+                        style.font = { bold: true, sz: 11, color: { rgb: "366092" } };
+                    } else if (ws[cellAddress].v && ws[cellAddress].v.includes('📋')) {
+                        // Legend header
+                        style.font = { bold: true, sz: 11, color: { rgb: "7030A0" } };
+                        style.fill = { fgColor: { rgb: "E7E6E6" } };
+                    } else {
+                        // Regular text
+                        style.font = { sz: 10 };
+                    }
+                    
+                    ws[cellAddress].s = style;
                 }
             }
         }
         
-        // Set row heights for better readability
+        // Set enhanced row heights for better readability
         if (!ws['!rows']) ws['!rows'] = [];
-        for (let i = 2; i < sheetData.length - 3; i++) {
-            ws['!rows'][i] = { hpx: 30 }; // Increase row height for wrapped text
+        // Title and header rows
+        ws['!rows'][0] = { hpx: 40 }; // Title row
+        ws['!rows'][1] = { hpx: 25 }; // Metadata row
+        ws['!rows'][3] = { hpx: 35 }; // Column headers
+        
+        // Data rows
+        for (let i = dataStartRow; i <= dataEndRow; i++) {
+            ws['!rows'][i] = { hpx: 35 }; // Increase row height for emoji and wrapped text
         }
         
-        // Add worksheet to workbook
-        const sheetName = new Date(analysisYear, analysisMonth - 1).toLocaleString('default', { month: 'short', year: 'numeric' }).replace(' ', '_');
-        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        // Merge cells for better presentation
+        if (!ws['!merges']) ws['!merges'] = [];
+        // Merge title row
+        ws['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: daysInMonth + 6 } });
+        // Merge metadata row
+        ws['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: daysInMonth + 6 } });
+        
+        // Add worksheet to workbook with enhanced sheet name
+        const sheetName = new Date(analysisYear, analysisMonth - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).replace(' ', '_');
+        XLSX.utils.book_append_sheet(wb, ws, `📅 ${sheetName}`);
     });
     
-    // Generate filename
+    // Generate enhanced filename with timestamp
+    const timestamp = new Date().toISOString().split('T')[0];
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false }).replace(/:/g, '-');
     const filename = selectedMonth !== 'all' 
-        ? `Attendance_Report_${selectedMonth}_${new Date().toISOString().split('T')[0]}.xlsx`
-        : `Attendance_Report_All_Months_${new Date().toISOString().split('T')[0]}.xlsx`;
+        ? `BOP25_Attendance_Report_${selectedMonth}_${timestamp}_${timeStr}.xlsx`
+        : `BOP25_Attendance_Report_All_Months_${timestamp}_${timeStr}.xlsx`;
     
     // Save file
     XLSX.writeFile(wb, filename);
+    
+    // Show success message
+    showSuccessMessage(`📊 Enhanced attendance report downloaded successfully! File: ${filename}`);
+}
+
+// Helper function to get unique working days in a month
+function getUniqueWorkingDaysInMonth(monthData, year, month) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let workingDays = 0;
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+        const checkDate = new Date(year, month - 1, day);
+        const dayOfWeek = checkDate.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+        const dateString = checkDate.toISOString().split('T')[0];
+        const isHolidayDate = isHoliday(dateString);
+        const isWeekend = dayOfWeek === 'SAT' || dayOfWeek === 'SUN';
+        
+        if (!isWeekend && !isHolidayDate) {
+            workingDays++;
+        }
+    }
+    
+    return workingDays;
 }
 
 // Download summary CSV
@@ -2836,39 +3967,170 @@ function downloadEmployeeAttendance(employeeName, selectedMonth) {
         );
     }
     
-    // Create CSV content for individual employee focusing on morning entrance
+    // Calculate comprehensive statistics
+    const workingDays = getWorkingDaysCount(attendanceToShow);
+    const presentDays = getPresentDaysCount(attendanceToShow);
+    const lateDays = attendanceToShow.filter(r => {
+        const isWeekend = r.dayOfWeek === 'SUN' || r.dayOfWeek === 'SAT';
+        const dateString = r.fullDate ? r.fullDate.toISOString().split('T')[0] : null;
+        const isHolidayDate = dateString && isHoliday(dateString);
+        return r.morning.in && r.morning.in > '06:45' && !isWeekend && !isHolidayDate;
+    }).length;
+    const absentDays = workingDays - presentDays;
+    const attendanceRate = workingDays > 0 ? Math.round((presentDays / workingDays) * 100) : 0;
+    const punctualityRate = presentDays > 0 ? Math.round(((presentDays - lateDays) / presentDays) * 100) : 0;
+    
+    // Enhanced CSV content with comprehensive analysis
     const csvRows = [
-        ['Prefect:', employee.name],
-        ['Prefect ID:', employee.employeeId],
+        ['🎓 BOP25 PREFECT INDIVIDUAL ATTENDANCE REPORT'],
         [''],
-        ['Date', 'Day', 'Morning Entrance', 'Late Status']
+        ['👤 PREFECT INFORMATION'],
+        ['Name:', employee.name],
+        ['Prefect ID:', employee.employeeId || 'N/A'],
+        ['Report Period:', selectedMonth === 'all' ? 'All Available Months' : new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })],
+        ['Generated On:', new Date().toLocaleDateString() + ' at ' + new Date().toLocaleTimeString()],
+        [''],
+        ['📊 PERFORMANCE SUMMARY'],
+        ['Total Working Days:', workingDays],
+        ['Days Present:', presentDays],
+        ['Days Late:', lateDays],
+        ['Days Absent:', absentDays],
+        ['Overall Attendance Rate:', attendanceRate + '%'],
+        ['Punctuality Rate:', punctualityRate + '%'],
+        [''],
+        ['🏆 PERFORMANCE GRADE'],
+        ['Grade:', attendanceRate >= 95 ? 'Excellent (🏆)' : attendanceRate >= 85 ? 'Good (🥈)' : attendanceRate >= 75 ? 'Average (🥉)' : 'Needs Improvement (⚠️)'],
+        [''],
+        ['📈 DETAILED ATTENDANCE ANALYSIS'],
+        [''],
+        ['📅 Date', '🗓️ Day', '⏰ Morning Entry', '📊 Status', '✅ On Time?', '📝 Notes'],
+        ['']
     ];
     
-    attendanceToShow.forEach(record => {
+    // Sort attendance data by date for better readability
+    const sortedAttendance = attendanceToShow.sort((a, b) => {
+        if (a.fullDate && b.fullDate) {
+            return a.fullDate.getTime() - b.fullDate.getTime();
+        }
+        return 0;
+    });
+    
+    // Add detailed attendance records with enhanced analysis
+    sortedAttendance.forEach(record => {
         const isWeekend = record.dayOfWeek === 'SUN' || record.dayOfWeek === 'SAT';
+        const dateString = record.fullDate ? record.fullDate.toISOString().split('T')[0] : null;
+        const isHolidayDate = dateString && isHoliday(dateString);
         const isLate = record.morning.in && record.morning.in > '06:45';
-        let status = '';
         
-        if (record.morning.in) {
-            if (isWeekend) {
-                status = 'WEEKEND';
+        let status = '';
+        let onTime = '';
+        let notes = '';
+        
+        if (isHolidayDate) {
+            status = '🏖️ HOLIDAY';
+            onTime = 'N/A';
+            notes = 'Official holiday - no attendance required';
+        } else if (isWeekend) {
+            status = '🏠 WEEKEND';
+            onTime = 'N/A';
+            notes = 'Weekend - no attendance required';
+        } else if (record.morning.in) {
+            if (isLate) {
+                status = '⏰ LATE';
+                onTime = '❌ No';
+                const [hours, minutes] = record.morning.in.split(':').map(Number);
+                const lateMinutes = (hours - 6) * 60 + (minutes - 45);
+                notes = `Late by ${lateMinutes} minutes`;
             } else {
-                status = isLate ? 'LATE' : 'ON TIME';
+                status = '✅ ON TIME';
+                onTime = '✅ Yes';
+                notes = 'Arrived on time - excellent!';
             }
+        } else {
+            status = '❌ ABSENT';
+            onTime = '❌ No';
+            notes = 'No morning entrance recorded';
         }
         
         csvRows.push([
             record.date,
             record.dayOfWeek,
-            record.morning.in || '',
-            status
+            record.morning.in || 'No Entry',
+            status,
+            onTime,
+            notes
         ]);
     });
     
+    // Add insights and recommendations
+    csvRows.push(['']);
+    csvRows.push(['💡 INSIGHTS & RECOMMENDATIONS']);
+    csvRows.push(['']);
+    
+    if (attendanceRate >= 95) {
+        csvRows.push(['🏆 Excellent Performance!', 'Outstanding attendance record. Keep up the excellent work!']);
+    } else if (attendanceRate >= 85) {
+        csvRows.push(['🥈 Good Performance', 'Solid attendance record with room for minor improvements.']);
+    } else if (attendanceRate >= 75) {
+        csvRows.push(['🥉 Average Performance', 'Attendance is acceptable but could be improved for better results.']);
+    } else {
+        csvRows.push(['⚠️ Needs Improvement', 'Attendance requires immediate attention and improvement.']);
+    }
+    
+    if (lateDays > 0) {
+        csvRows.push(['Punctuality Note:', `Consider improving arrival time. Late on ${lateDays} out of ${presentDays} present days.`]);
+    }
+    
+    if (absentDays > workingDays * 0.2) {
+        csvRows.push(['Attendance Alert:', 'High absence rate detected. Please discuss with board administration.']);
+    }
+    
+    // Add monthly breakdown if viewing all months
+    if (selectedMonth === 'all' && allMonths.length > 1) {
+        csvRows.push(['']);
+        csvRows.push(['📅 MONTHLY BREAKDOWN']);
+        csvRows.push(['Month', 'Working Days', 'Present', 'Absent', 'Late', 'Attendance %']);
+        
+        allMonths.forEach(month => {
+            const [year, monthNum] = month.split('-');
+            const monthData = employee.attendanceData.filter(record => 
+                record.fullDate && record.fullDate.getFullYear() == year && 
+                record.fullDate.getMonth() + 1 == monthNum
+            );
+            
+            if (monthData.length > 0) {
+                const monthWorkingDays = getWorkingDaysCount(monthData);
+                const monthPresentDays = getPresentDaysCount(monthData);
+                const monthLateDays = monthData.filter(r => {
+                    const isWeekend = r.dayOfWeek === 'SUN' || r.dayOfWeek === 'SAT';
+                    const dateString = r.fullDate ? r.fullDate.toISOString().split('T')[0] : null;
+                    const isHolidayDate = dateString && isHoliday(dateString);
+                    return r.morning.in && r.morning.in > '06:45' && !isWeekend && !isHolidayDate;
+                }).length;
+                const monthAbsentDays = monthWorkingDays - monthPresentDays;
+                const monthAttendanceRate = monthWorkingDays > 0 ? Math.round((monthPresentDays / monthWorkingDays) * 100) : 0;
+                
+                const monthName = new Date(year, monthNum - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                csvRows.push([monthName, monthWorkingDays, monthPresentDays, monthAbsentDays, monthLateDays, monthAttendanceRate + '%']);
+            }
+        });
+    }
+    
+    // Add footer
+    csvRows.push(['']);
+    csvRows.push(['📋 REPORT FOOTER']);
+    csvRows.push(['Generated by:', 'BOP25 Prefects Attendance Management System']);
+    csvRows.push(['Contact:', 'Board of Prefects 2025']);
+    csvRows.push(['Note:', 'This report is generated automatically and contains official attendance data.']);
+    
     const csvContent = csvRows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-    const filename = `${employee.name.replace(/\s+/g, '_')}_morning_attendance_${selectedMonth === 'all' ? 'all' : selectedMonth}.csv`;
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `BOP25_${employee.name.replace(/\s+/g, '_')}_Detailed_Report_${selectedMonth === 'all' ? 'All_Months' : selectedMonth}_${timestamp}.csv`;
     
     downloadCSVFile(csvContent, filename);
+    
+    // Show success message
+    showSuccessMessage(`📊 Detailed attendance report for ${employee.name} downloaded successfully!`);
 }
 
 // Helper function to check if a date is a holiday
@@ -2920,8 +4182,8 @@ function showHolidayCalendar(selectedMonth) {
         <div class="modal fade" id="holidayModal" tabindex="-1">
             <div class="modal-dialog modal-lg">
                 <div class="modal-content border-0 shadow-lg holiday-modal">
-                    <div class="modal-header border-0 bg-gradient-primary text-white">
-                        <h5 class="modal-title fw-light">
+                    <div class="modal-header border-0" style="background: #0a0a0a; border-bottom: 1px solid #2d2d2d;">
+                        <h5 class="modal-title fw-light" style="color: #10b981;">
                             <i class="bi bi-calendar-event me-2"></i>Holiday Management
                         </h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -3688,8 +4950,8 @@ function showAnalysis(selectedMonth) {
         <div class="modal fade" id="analysisModal" tabindex="-1">
             <div class="modal-dialog modal-xl">
                 <div class="modal-content border-0 shadow-lg analysis-modal">
-                    <div class="modal-header border-0 bg-gradient-primary text-white">
-                        <h5 class="modal-title fw-light">
+                    <div class="modal-header border-0" style="background: #0a0a0a; border-bottom: 1px solid #2d2d2d;">
+                        <h5 class="modal-title fw-light" style="color: #e2e8f0;">
                             <i class="bi bi-bar-chart me-2"></i>Daily Attendance Analysis
                             <small class="opacity-75 ms-2">${monthLabel}</small>
                         </h5>
@@ -4669,13 +5931,26 @@ function searchPrefects() {
         }
     });
     
-    // Update row numbers for visible rows
+    // Update ranking for visible rows
     let visibleIndex = 1;
     tableRows.forEach(row => {
         if (row.style.display !== 'none') {
-            const rowNumber = row.querySelector('.row-number');
-            if (rowNumber) {
-                rowNumber.textContent = visibleIndex++;
+            const rankingBadge = row.querySelector('.ranking-badge');
+            if (rankingBadge) {
+                // Update ranking text
+                rankingBadge.textContent = `#${visibleIndex}`;
+                
+                // Update ranking class for top 3
+                rankingBadge.className = 'ranking-badge';
+                if (visibleIndex === 1) {
+                    rankingBadge.classList.add('rank-1');
+                } else if (visibleIndex === 2) {
+                    rankingBadge.classList.add('rank-2');
+                } else if (visibleIndex === 3) {
+                    rankingBadge.classList.add('rank-3');
+                }
+                
+                visibleIndex++;
             }
         }
     });

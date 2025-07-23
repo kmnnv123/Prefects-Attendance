@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        input {
+            padding: 1rem;
+            border: 2px solid #374151;
+            border-radius: 8px;
+            background: #0a0a0a;
+            color: white;
+            font-size: 1rem;
+            width: 300px;
+        }
+        
+        button {
+            padding: 1rem 2rem;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        
+        #result {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 8px;
+            min-height: 50px;
+        }
+        
+        .success {
+            background: #10b981;
+        }
+        
+        .error {
+            background: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <h1>Login Test</h1>
+    <p>Try password: <strong>PrefectsAdmin2025!</strong></p>
+    
+    <input type="password" id="testPassword" placeholder="Enter password">
+    <button onclick="testLogin()">Test Login</button>
+    
+    <div id="result"></div>
+    
+    <script>
+        // Hash password function
+        async function hashPassword(password) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(password);
+            const hash = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hash));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+        
+        async function testLogin() {
+            const passwordInput = document.getElementById('testPassword');
+            const result = document.getElementById('result');
+            const enteredPassword = passwordInput.value;
+            
+            result.textContent = 'Testing...';
+            result.className = '';
+            
+            if (!enteredPassword) {
+                result.textContent = 'Please enter a password';
+                result.className = 'error';
+                return;
+            }
+            
+            try {
+                // Get stored password hash or use default
+                const storedPasswordHash = localStorage.getItem('boardAdminPasswordHash') || "f16d847d2182c5d0be13cf3263a4898c2849e96c9beb04b9694258b0d7eb080e";
+                
+                // Hash the entered password
+                const enteredPasswordHash = await hashPassword(enteredPassword);
+                
+                result.innerHTML = `
+                    <strong>Debug Info:</strong><br>
+                    Entered: "${enteredPassword}"<br>
+                    Entered Hash: ${enteredPasswordHash}<br>
+                    Stored Hash: ${storedPasswordHash}<br>
+                    Match: ${enteredPasswordHash === storedPasswordHash ? 'YES' : 'NO'}
+                `;
+                
+                if (enteredPasswordHash === storedPasswordHash) {
+                    result.className = 'success';
+                    result.innerHTML += '<br><strong>✅ LOGIN SUCCESS!</strong>';
+                } else {
+                    result.className = 'error';
+                    result.innerHTML += '<br><strong>❌ LOGIN FAILED!</strong>';
+                }
+                
+            } catch (error) {
+                result.textContent = `Error: ${error.message}`;
+                result.className = 'error';
+            }
+        }
+        
+        // Allow Enter key
+        document.getElementById('testPassword').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testLogin();
+            }
+        });
+    </script>
+</body>
+</html>

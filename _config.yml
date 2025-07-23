@@ -1,0 +1,11 @@
+# GitHub Pages Configuration
+# This file is not required but helps with GitHub Pages setup
+baseurl: ""
+url: "https://yourusername.github.io/fingerprint-analyzer"
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
